@@ -5,6 +5,12 @@ using (var sha = SHA512.Create())
 {
 var encoding = Encoding.UTF8;
 var bytes = encoding.GetBytes(value);
+
+foreach(var byt in bytes)
+    Console.Write($"{byt:X2}");
+
+Console.WriteLine();
+
 var resultBytes = sha.ComputeHash(bytes);
 
 foreach(var byt in resultBytes)

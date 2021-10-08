@@ -7,19 +7,28 @@ var encoding = Encoding.UTF8;
 var bytes = encoding.GetBytes(value);
 
 foreach(var byt in bytes)
-    Console.Write($"{byt:X2}");
+    Console.Write($"{byt:X2} ");
 
 Console.WriteLine();
 
 var resultBytes = sha.ComputeHash(bytes);
 
 foreach(var byt in resultBytes)
-	Console.Write($"{byt:X2}");
+	Console.Write($"{byt:X2} ");
+
+Console.WriteLine();
+var normalazed = new byte[resultBytes.Length];
+
+for(var index = 0; index < normalazed.Length; index++)
+{
+	normalazed[index] = Normalaze(resultBytes[index]);
+	Console.Write($"{normalazed[index]:X2} ");
+}
 
 Console.WriteLine();
 
-foreach(var byt in resultBytes)
-	Console.Write(Encoding.ASCII.GetString(new []{Normalaze(byt)}));
+foreach(var byt in normalazed)
+	Console.Write(Encoding.ASCII.GetString(new []{byt}));
 }
 
 byte Normalaze(byte b)

@@ -1,9 +1,102 @@
-#r"nuget: PlainTool,1.0.0.58"
+//#r"nuget: PlainTool,1.0.0.58"
 
 using System;
 using System.Security.Cryptography;
-using PlainTool.CommandLine;
-using PlainTool;
+
+public class RefUInt16
+{
+    public RefUInt16(ushort value) => Value = value;
+
+    public ushort Value { get; }
+}
+
+public class UInt16CommandLineArgumentMeta : CommandLineArgumentMeta<RefUInt16>
+{
+    public UInt16CommandLineArgumentMeta(string key) : base(key)
+    {
+    }
+
+    public override RefUInt16 Parse(string value) => new(ushort.Parse(value));
+}
+
+public abstract class Identifier<TKey> : IIdentifier<TKey>
+{
+    public Identifier(TKey key) => Key = key;
+
+    public TKey Key { get; }
+
+    public override int GetHashCode() => EqualityComparer<TKey>.Default.GetHashCode(Key);
+
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(null, obj))
+            return false;
+        if (ReferenceEquals(this, obj))
+            return true;
+        if (obj is not IIdentifier<TKey> identifier)
+            return false;
+
+        return identifier.Key.Equals(Key);
+    }
+}
+
+public abstract class CommandLineArgumentMeta<TType> : Identifier<string>, ICommandLineArgumentMeta<TType>
+{
+    protected CommandLineArgumentMeta(string key) : base(key)
+    {
+    }
+
+    public abstract TType Parse(string value);
+}
+
+public class StringCommandLineArgumentMeta : CommandLineArgumentMeta<string>
+{
+    public StringCommandLineArgumentMeta(string key) : base(key)
+    {
+    }
+
+    public override string Parse(string value) => value;
+}
+
+public interface IIdentifier<out TKey>
+{
+    public TKey Key { get; }
+}
+
+public interface ICommandLineArgumentMeta<out TType> : IIdentifier<string>
+{
+    TType Parse(string value);
+}
+
+public sealed class CommandLineContext
+{
+    public readonly Dictionary<string, ICommandLineArgumentMeta<object>> _metas = new();
+
+    public ICommandLineArgumentMeta<object> this[string key] => _metas[key];
+
+    public CommandLineContext(IEnumerable<ICommandLineArgumentMeta<object>> metas)
+    {
+        foreach (var meta in metas)
+            _metas.Add(meta.Key, meta);
+    }
+
+    public IEnumerable<ICommandLineArgumentMeta<object>> Metas => _metas.Values;
+
+    public bool ContainsKey(string key) => _metas.ContainsKey(key);
+
+    public Dictionary<string, object> Parse(IEnumerable<string> args)
+    {
+        var result = new Dictionary<string, object>();
+
+        foreach (var arg in args)
+        {
+            var items = arg.Split("=");
+            result[items[0]] = this[items[0]].Parse(items[1]);
+        }
+
+        return result;
+    }
+}
 
 var context = new CommandLineContext(new ICommandLineArgumentMeta<object>[]
 {

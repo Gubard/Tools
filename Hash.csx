@@ -1,7 +1,13 @@
-//#r"nuget: PlainTool,1.0.0.58"
-
 using System;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+
+public class Ref<T> where T : struct
+{
+    public Ref(T value) => Value = value;
+
+    public T Value { get; set; }
+}
 
 public class RefUInt16
 {
@@ -10,13 +16,13 @@ public class RefUInt16
     public ushort Value { get; }
 }
 
-public class UInt16CommandLineArgumentMeta : CommandLineArgumentMeta<RefUInt16>
+public class UInt16CommandLineArgumentMeta : CommandLineArgumentMeta<Ref<ushort>>
 {
-    public UInt16CommandLineArgumentMeta(string key) : base(key)
+    public UInt16CommandLineArgumentMeta(string key, Ref<ushort> value) : base(key, value)
     {
     }
 
-    public override RefUInt16 Parse(string value) => new(ushort.Parse(value));
+    public override Ref<ushort> Parse(string value) => new(ushort.Parse(value));
 }
 
 public abstract class Identifier<TKey> : IIdentifier<TKey>
@@ -42,16 +48,16 @@ public abstract class Identifier<TKey> : IIdentifier<TKey>
 
 public abstract class CommandLineArgumentMeta<TType> : Identifier<string>, ICommandLineArgumentMeta<TType>
 {
-    protected CommandLineArgumentMeta(string key) : base(key)
-    {
-    }
+    protected CommandLineArgumentMeta(string key, TType @default) : base(key) => Default = @default;
+
+    public TType Default { get; }
 
     public abstract TType Parse(string value);
 }
 
 public class StringCommandLineArgumentMeta : CommandLineArgumentMeta<string>
 {
-    public StringCommandLineArgumentMeta(string key) : base(key)
+    public StringCommandLineArgumentMeta(string key, string str) : base(key, str)
     {
     }
 
@@ -65,6 +71,8 @@ public interface IIdentifier<out TKey>
 
 public interface ICommandLineArgumentMeta<out TType> : IIdentifier<string>
 {
+    TType Default { get; }
+
     TType Parse(string value);
 }
 
@@ -84,7 +92,7 @@ public sealed class CommandLineContext
 
     public bool ContainsKey(string key) => _metas.ContainsKey(key);
 
-    public Dictionary<string, object> Parse(IEnumerable<string> args)
+    public Dictionary<string, object> Parse(string[] args)
     {
         var result = new Dictionary<string, object>();
 
@@ -94,74 +102,79 @@ public sealed class CommandLineContext
             result[items[0]] = this[items[0]].Parse(items[1]);
         }
 
+        foreach (var meta in Metas)
+            if (!result.ContainsKey(meta.Key))
+                result[meta.Key] = meta.Default;
+
         return result;
     }
 }
 
 var context = new CommandLineContext(new ICommandLineArgumentMeta<object>[]
 {
-    new StringCommandLineArgumentMeta("key"),
-	new UInt16CommandLineArgumentMeta("maxLength"),
-	new StringCommandLineArgumentMeta("values"),
+    new StringCommandLineArgumentMeta("key", string.Empty),
+	new UInt16CommandLineArgumentMeta("length", new(512)),
+    new StringCommandLineArgumentMeta("regex", "^[\\s\\S]$"),
 });
 var args = Environment.GetCommandLineArgs().ToArray();
-var arguments = context.Parse(args.Where(x => x.Contains("=")));
+var arguments = context.Parse(args.Where(x => x.Contains("=")).ToArray());
 var value = ((string)arguments["key"]).ToUpper().Trim();
 Console.WriteLine($"key {value}");
-var number = 0;
-var values = string.Empty;
-
-if(arguments.ContainsKey("maxLength"))
-	number = (int)((RefUInt16)arguments["maxLength"]).Value;
-if(arguments.ContainsKey("values"))
-	values = (string)arguments["values"];
+var number = (int)((Ref<ushort>)arguments["length"]).Value;
+var regex = new Regex((string)arguments["regex"], RegexOptions.Compiled);
+var result = new StringBuilder();
 
 using (var sha = SHA512.Create())
 {
-	var encoding = Encoding.UTF8;
-	var bytes = encoding.GetBytes(value);
+	var bytes = GetBytes(sha, value);
+    var bytesIndex = 0;
 
-	foreach(var byt in bytes)
-	    Console.Write($"{byt:X2} ");
+    for(var index = 0; index < number; index++, bytesIndex++)
+    {
+        if(bytes.Length == bytesIndex)
+        {
+            bytes = GetBytes(sha, result.ToString());
+            bytesIndex = 0;
+        }
 
-	Console.WriteLine();
+        if(!IsASCIIChar(bytes[bytesIndex]))
+        {
+            index--;
 
-	var resultBytes = sha.ComputeHash(bytes);
+            continue;
+        }
 
-	foreach(var byt in resultBytes)
-		Console.Write($"{byt:X2} ");
+        var stringChar = ToASCIIString(bytes[bytesIndex]);
 
-	Console.WriteLine();
-	var normalazed = new byte[resultBytes.Length];
+        if(!regex.IsMatch(stringChar))
+        {
+            index--;
 
-	for(var index = 0; index < normalazed.Length; index++)
-	{
-		normalazed[index] = Normalaze(resultBytes[index]);
-		Console.Write($"{normalazed[index]:X2} ");
-	}
+            continue;
+        }
 
-	Console.WriteLine();
-	var i = 0;
+        result.Append(stringChar);
+    }
 
-	foreach(var byt in normalazed)
-	{
-		var charString = Encoding.ASCII.GetString(new []{byt});
-
-		if(values.Any() && !values.Contains(charString))
-			continue;
-		if(number == 0||i < number)
-			Console.Write(charString);
-
-		i++;
-	}
+    Console.WriteLine(result.ToString());
 }
 
-byte Normalaze(byte b)
+byte[] GetBytes(SHA512 sha, string str)
 {
-	if(b < 32)
-		return (byte)(b + 32);
-	if(b > 126)
-		return (byte)(b - 126 + 32);
+    var encoding = Encoding.UTF8;
+	var bytes = encoding.GetBytes(str);
 
-	return b;
+	return sha.ComputeHash(bytes);
+}
+
+string ToASCIIString(byte b) => Encoding.ASCII.GetString(new []{b});
+
+bool IsASCIIChar(byte b)
+{
+    if(b < 32)
+		return false;
+	if(b > 126)
+		return false;
+    
+    return true;
 }

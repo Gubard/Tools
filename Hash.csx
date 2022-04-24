@@ -115,48 +115,83 @@ var context = new CommandLineContext(new ICommandLineArgumentMeta<object>[]
     new StringCommandLineArgumentMeta("key", string.Empty),
 	new UInt16CommandLineArgumentMeta("length", new(512)),
     new StringCommandLineArgumentMeta("regex", "^[\\s\\S]$"),
+    new StringCommandLineArgumentMeta("conditions", string.Empty),
+    new StringCommandLineArgumentMeta("mainRegex", "[\\s\\S]"),
 });
 var args = Environment.GetCommandLineArgs().ToArray();
 var arguments = context.Parse(args.Where(x => x.Contains("=")).ToArray());
+var conditionsString = (string)arguments["conditions"];
+var conditions = new Dictionary<Regex, ushort>();
+
+foreach(var condition in conditionsString.Split(";", StringSplitOptions.RemoveEmptyEntries))
+{
+	var values = condition.Split(":");
+	conditions.Add(new Regex(values[0]), ushort.Parse(values[1]));
+}
+
 var value = ((string)arguments["key"]).ToUpper().Trim();
 Console.WriteLine($"key {value}");
 var number = (int)((Ref<ushort>)arguments["length"]).Value;
 var regex = new Regex((string)arguments["regex"], RegexOptions.Compiled);
+var mainRegex = new Regex((string)arguments["mainRegex"], RegexOptions.Compiled);
 var result = new StringBuilder();
 
 using (var sha = SHA512.Create())
 {
 	var bytes = GetBytes(sha, value);
-    var bytesIndex = 0;
+    	var bytesIndex = 0;
 
-    for(var index = 0; index < number; index++, bytesIndex++)
-    {
-        if(bytes.Length == bytesIndex)
-        {
-            bytes = GetBytes(sha, result.ToString());
-            bytesIndex = 0;
-        }
+	for(var index = 0; index < number; index++, bytesIndex++)
+    	{	
+        	if(bytes.Length == bytesIndex)
+        	{
+            		bytes = GetBytes(sha, result.ToString());
+            		bytesIndex = 0;
+        	}
 
-        if(!IsASCIIChar(bytes[bytesIndex]))
-        {
-            index--;
+        	if(!IsASCIIChar(bytes[bytesIndex]))
+        	{
+            		index--;
 
-            continue;
-        }
+           	 	continue;
+        	}
 
-        var stringChar = ToASCIIString(bytes[bytesIndex]);
+        	var stringChar = ToASCIIString(bytes[bytesIndex]);
 
-        if(!regex.IsMatch(stringChar))
-        {
-            index--;
+        	if(!regex.IsMatch(stringChar))
+        	{
+            		index--;
 
-            continue;
-        }
+           		continue;
+        	}
 
-        result.Append(stringChar);
-    }
+        	result.Append(stringChar);
+    		
+		if(result.Length == number)
+		{
+			if(!mainRegex.IsMatch(result.ToString()))
+			{
+				index--;
+				result.Remove(0, 1);
 
-    Console.WriteLine(result.ToString());
+				continue;
+			}
+
+			foreach(var condition in conditions)
+			{
+				if(condition.Key.Matches(result.ToString()).Count != condition.Value)
+				{
+					index--;
+					result.Remove(0, 1);
+
+					break;
+				}
+			}
+		}
+	
+	}
+
+    	Console.WriteLine(result.ToString());
 }
 
 byte[] GetBytes(SHA512 sha, string str)
